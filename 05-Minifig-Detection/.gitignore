@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Training output and downloads (minifig.pt is the one we keep)
+# runs/ is kept: training plots and weights are part of the write-up
+yolov8n.pt
+train.log
+dataset/data_fixed.yaml
+dataset/**/*.cache
