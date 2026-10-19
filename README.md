@@ -10,6 +10,7 @@ My work for ME193, one folder per assignment, roughly in the order we did them.
 | 04 | [Whistle Spectrogram](04-Whistle-Spectrogram/) | Records audio from the microphone and plots its waveform, spectrum, and spectrogram. |
 | 05 | [Minifig Detection](05-Minifig-Detection/) | YOLOv8 trained on photos of a green LEGO minifig; the laptop tracks it and sends its position over MQTT to an Arduino UnoQ car. Includes the dataset and training runs. |
 | 06 | [Ping-Pong](06-Ping-Pong/) | Virtual ping-pong with the Double Motor as the paddle: MediaPipe Pose, IMU swing detection, AprilTag menus, haptic feedback, and the record streak published over MQTT. |
+| 07 | [Sumo Wrestler](07-Sumo/) | LEGO sumo robot with shared control: Xbox controller driving plus a UnoQ-read Color Sensor that forces the robot off the ring's edge, combined in a decision tree. |
 
 ## Setup
 
