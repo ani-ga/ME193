@@ -3,11 +3,13 @@
 A LEGO sumo robot that fights inside a ring of blue tape. The driver steers with an
 Xbox controller; a Color Sensor on the back, read by an Arduino UnoQ, spots the tape
 and forces the robot forward off the edge while the driver keeps steering. If the
-robot is pushed out, the driver holds B and it stops and plays a sad song.
+robot is pushed out, the driver holds B and it stops and plays a sad song (on the
+laptop speakers, with the robot beeping along). A Single Motor on the front spins
+while X or Y is held.
 
 | Part | Runs on | Role |
 | --- | --- | --- |
-| `sumo_controller.py` | Laptop | Reads the Xbox controller, gets tape readings over MQTT, runs the decision tree, drives the Double Motor (orange card, 1142) |
+| `sumo_controller.py` | Laptop | Reads the Xbox controller, gets tape readings over MQTT, runs the decision tree, drives the Double Motor and the front Single Motor (both orange card, 1142) |
 | `unoq_app/python/main.py` | UnoQ (Linux shell) | Connects to the Color Sensor (red card, 1142) over Bluetooth and publishes `{"edge", "color", "reflection"}` to `ME193/sumo/ani/edge` 20 times a second |
 | `test_color_sensor.py` | Laptop | Tests the Color Sensor against the tape on its own |
 
@@ -21,9 +23,10 @@ Checked 20 times a second; the first match wins.
 | 2 | Xbox controller disconnected | FAILSAFE_STOP | 0, 0 |
 | 3 | UnoQ sees the tape behind us | ESCAPE_SHARED: forced forward, driver steers | 100 + 50x, 100 - 50x |
 | 4 | A or right trigger | CHARGE: full forward, driver steers | 100 + 50x, 100 - 50x |
-| 5 | Otherwise | TELEOP: arcade drive | 100y + 100x, 100y - 100x |
+| 5 | Otherwise | TELEOP: arcade drive at up to 50% | 50y + 50x, 50y - 50x |
 
 If the UnoQ goes quiet, the robot keeps driving on the controller alone and prints a warning.
+The front motor sits outside the tree: it follows X / Y, and stops on OUT or FAILSAFE_STOP.
 
 ## Running it
 
@@ -44,7 +47,7 @@ If the UnoQ goes quiet, the robot keeps driving on the controller alone and prin
 3. On the laptop:
 
    ```bash
-   pip install paho-mqtt legoeducation pygame-ce
+   pip install paho-mqtt legoeducation pygame-ce numpy sounddevice
    python sumo_controller.py               # fight
    python sumo_controller.py --show-input  # check the controller + UnoQ readings
    python sumo_controller.py --dry-run     # no robot, prints motor commands
@@ -55,3 +58,4 @@ If the UnoQ goes quiet, the robot keeps driving on the controller alone and prin
 | Left stick | Drive (x steers, y throttle) |
 | A or right trigger | Charge |
 | Hold B 1.5 s | Out |
+| Hold X / Y | Spin the front motor forward / backward |

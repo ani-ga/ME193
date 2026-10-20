@@ -8,11 +8,13 @@ Inputs:
     {"edge": 1, "color": 3, "reflection": 12} to EDGE_TOPIC
 Output:
   - LEGO Double Motor speeds (left, right)
+  - LEGO Single Motor on the front (spins while X or Y is held)
 
 Controls:
   left stick          drive (x steers, y throttle)
   A or right trigger  CHARGE
   hold B LONG_PRESS s OUT
+  hold X / Y          spin the front motor forward / backward
 
 Decision tree (first match wins):
   1. OUT            B held >= LONG_PRESS          -> stop, sad song, end
@@ -51,10 +53,17 @@ LONG_PRESS = 1.5              # seconds holding B -> "we're out"
 TRIGGER_ON = 0.5              # right trigger pressed past half = charge
 ESCAPE_POWER = 100            # forward power when tape is seen behind us
 STEER_GAIN = 50               # how much stick x bends ESCAPE / CHARGE
+TELEOP_SPEED = 50             # top speed (%) when driving with the stick; CHARGE and ESCAPE stay at 100
 
 # Connection Card for the Double Motor
 MOTOR_CARD_COLOR = "orange"
 MOTOR_CARD_SERIAL = "1142"
+
+# Connection Card for the front Single Motor. It shares the Double Motor's
+# card; the library also matches the device type, so they don't get mixed up.
+FRONT_CARD_COLOR = "orange"
+FRONT_CARD_SERIAL = "1142"
+FRONT_SPEED = 100             # % while X / Y is held; flip the sign if X spins it backward
 
 # The two motors are mounted mirrored on the chassis (same as
 # track_apriltag.py). Swap a -1 if the robot spins when it should go straight,
@@ -68,23 +77,58 @@ SWAP_SIDES = True
 
 # (frequency Hz, seconds); wah wah wah waaah, as in world_cup.py
 SAD_SONG = [(494, 0.45), (466, 0.45), (440, 0.45), (415, 1.3)]
+SONG_VOLUME = 0.4             # laptop speaker volume, 0..1
+
+
+def start_song_on_laptop(song):
+    """Start playing (Hz, seconds) notes through the laptop speakers; returns
+    a function that waits for the song to finish."""
+    try:
+        import numpy as np
+        import sounddevice as sd
+    except ImportError:
+        print("(install numpy + sounddevice to hear the song on the laptop)")
+        return lambda: None
+
+    rate = 44100
+    parts = []
+    for freq, seconds in song:
+        t = np.arange(int(seconds * rate)) / rate
+        fade = np.minimum(1.0, np.minimum(t, t[-1] - t) / 0.01)  # 10 ms fades, no clicks
+        parts.append(np.sin(2 * np.pi * freq * t) * fade)
+    try:
+        sd.play((SONG_VOLUME * np.concatenate(parts)).astype(np.float32), rate)
+    except Exception as exc:  # no audio device, etc.
+        print(f"Could not play the song on the laptop: {exc}")
+        return lambda: None
+    return sd.wait
 
 
 # ---------------- ROBOT INTERFACE ----------------
 class Robot:
-    """LEGO Education Double Motor over Bluetooth."""
+    """LEGO Education Double Motor (drive) + Single Motor (front) over Bluetooth."""
 
     def __init__(self):
         import legoeducation as le
 
         self.le = le
         self.last_motors = None
+        self.last_front = None
         self.motor = le.DoubleMotor()
         print(f"Connecting to Double Motor (card {MOTOR_CARD_SERIAL})...")
         self.motor.connect(card_color=getattr(le, f"LEGO_COLOR_{MOTOR_CARD_COLOR.upper()}"),
                            card_serial=MOTOR_CARD_SERIAL)
         if not self.motor.connected:
             raise SystemExit("Error connecting to Double Motor. Check it's on and the card matches.")
+
+        # The front motor is extra: if it doesn't connect, drive without it.
+        self.front = le.SingleMotor()
+        print(f"Connecting to front Single Motor (card {FRONT_CARD_SERIAL})...")
+        self.front.connect(card_color=getattr(le, f"LEGO_COLOR_{FRONT_CARD_COLOR.upper()}"),
+                           card_serial=FRONT_CARD_SERIAL)
+        if not self.front.connected:
+            print("WARNING: front Single Motor didn't connect -- driving without it")
+            self.front = None
 
     def set_motors(self, left, right):
         # left/right in -100..100; only send when they change to keep Bluetooth quiet
@@ -101,15 +145,34 @@ class Robot:
         self.motor.motor_run(motor=le.MOTOR_LEFT, speed=GLOBAL_DIRECTION_SIGN * LEFT_SIGN * left, blocking=False)
         self.motor.motor_run(motor=le.MOTOR_RIGHT, speed=GLOBAL_DIRECTION_SIGN * RIGHT_SIGN * right, blocking=False)
 
+    def set_front(self, speed):
+        # speed in -100..100; only send when it changes
+        speed = int(speed)
+        if speed == self.last_front or self.front is None:
+            return
+        self.last_front = speed
+        if speed == 0:
+            self.front.motor_stop(blocking=False)
+        else:
+            self.front.motor_run(speed=speed, blocking=False)
+
     def play_sad_song(self):
+        """Song on the laptop speakers, with the robot beeping along."""
         print("sad trombone")
+        wait = start_song_on_laptop(SAD_SONG)
         for freq, seconds in SAD_SONG:
-            self.motor.beep(frequency=freq, blocking=False)
-            time.sleep(seconds)
-        self.motor.stop_beep()
+            start = time.time()
+            try:
+                self.motor.beep(frequency=freq, blocking=True)
+            except Exception as exc:
+                print(f"Robot beep failed: {exc}")
+            time.sleep(max(0.0, seconds - (time.time() - start)))
+        wait()
 
     def close(self):
         self.motor.disconnect()
+        if self.front is not None:
+            self.front.disconnect()
 
 
 class FakeRobot:
@@ -117,14 +180,21 @@ class FakeRobot:
 
     def __init__(self):
         self.last_motors = None
+        self.last_front = None
 
     def set_motors(self, left, right):
         if (int(left), int(right)) != self.last_motors:
             self.last_motors = (int(left), int(right))
             print(f"motors L={left:4.0f} R={right:4.0f}")
 
+    def set_front(self, speed):
+        if int(speed) != self.last_front:
+            self.last_front = int(speed)
+            print(f"front motor {speed:4.0f}")
+
     def play_sad_song(self):
         print("sad trombone")
+        start_song_on_laptop(SAD_SONG)()
 
     def close(self):
         pass
@@ -168,7 +238,7 @@ class XboxController:
             self._connect()
         if self.pad is None:
             self.b_since = None
-            return {"x": 0.0, "y": 0.0, "button": False, "out": False, "stale": True}
+            return {"x": 0.0, "y": 0.0, "button": False, "out": False, "front": 0, "stale": True}
 
         x = self._dz(self.pad.get_axis(pg.CONTROLLER_AXIS_LEFTX) / 32767)
         y = self._dz(-self.pad.get_axis(pg.CONTROLLER_AXIS_LEFTY) / 32767)  # stick up is negative
@@ -181,7 +251,11 @@ class XboxController:
             self.b_since = None
         out = self.b_since is not None and time.time() - self.b_since >= LONG_PRESS
 
-        return {"x": x, "y": y, "button": charge, "out": out, "stale": False}
+        # Front motor: X = forward, Y = backward, neither (or both) = stop
+        front = (int(bool(self.pad.get_button(pg.CONTROLLER_BUTTON_X)))
+                 - int(bool(self.pad.get_button(pg.CONTROLLER_BUTTON_Y))))
+
+        return {"x": x, "y": y, "button": charge, "out": out, "front": front, "stale": False}
 
     @staticmethod
     def _dz(v):
@@ -242,8 +316,9 @@ def decide(edge_seen, joy, is_out):
         return ("CHARGE", 100 + steer, 100 - steer)
 
     # Node 5: default -> follow the stick (arcade drive)
-    fwd = joy["y"] * 100
-    return ("TELEOP", fwd + joy["x"] * 100, fwd - joy["x"] * 100)
+    fwd = joy["y"] * TELEOP_SPEED
+    turn = joy["x"] * TELEOP_SPEED
+    return ("TELEOP", fwd + turn, fwd - turn)
 
 
 def clamp(v):
@@ -271,7 +346,8 @@ def show_input():
             unoq = (f"edge={int(edge.edge)} color={edge.color} reflection={edge.reflection}"
                     if edge.alive() else "UnoQ: no messages")
             pad_text = ("controller: not connected" if joy["stale"] else
-                        f"x={joy['x']:+.2f} y={joy['y']:+.2f} charge={int(joy['button'])} out={int(joy['out'])}")
+                        f"x={joy['x']:+.2f} y={joy['y']:+.2f} charge={int(joy['button'])} "
+                        f"out={int(joy['out'])} front={joy['front']:+d}")
             print(f"{pad_text}   {unoq}")
             time.sleep(0.2)
     except KeyboardInterrupt:
@@ -323,15 +399,20 @@ def run(dry_run):
 
             if action == "OUT":
                 robot.set_motors(0, 0)
+                robot.set_front(0)
                 robot.play_sad_song()
                 break
 
             robot.set_motors(clamp(left), clamp(right))
+            # The front motor is the driver's alone, outside the decision tree;
+            # it stops with everything else if the controller drops.
+            robot.set_front(0 if action == "FAILSAFE_STOP" else joy["front"] * FRONT_SPEED)
             time.sleep(1 / LOOP_HZ)
     except KeyboardInterrupt:
         pass
     finally:
         robot.set_motors(0, 0)
+        robot.set_front(0)
         mqtt.disconnect()
         robot.close()
 
