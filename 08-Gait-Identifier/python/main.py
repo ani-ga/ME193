@@ -1,4 +1,4 @@
-"""Linux-side entry point for the Activity Tracker app.
+"""Linux-side entry point for the Gait Identifier app.
 
 Talks to the MCU over the Bridge to read the MPU6050 (see ../sketch/sketch.ino),
 keeps a rolling window of samples, runs both classifiers, and serves a phone
@@ -15,7 +15,7 @@ from features import extract_features, single_axis_peaks
 from models import Model1Threshold, Model2KNN
 from calibration import CalibrationManager
 
-logger = Logger("ActivityTracker")
+logger = Logger("GaitIdentifier")
 
 SAMPLE_HZ = 50
 WINDOW_SECONDS = 2.0

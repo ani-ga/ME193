@@ -1,4 +1,4 @@
-# Activity Tracker 🐰
+# Gait Identifier 🐰
 
 Wearable activity classifier for the Uno Q + MPU6050 (worn on the ankle).
 Classifies **standing still / walking / running / biking / hopping** using

@@ -1,4 +1,4 @@
-// MCU (STM32) side of the Activity Tracker app.
+// MCU (STM32) side of the Gait Identifier app.
 //
 // Job: read the MPU6050 over I2C as fast as we reasonably can, and hand the
 // latest reading to Python whenever it asks. All the real work (windowing,

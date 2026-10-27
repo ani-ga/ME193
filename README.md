@@ -11,7 +11,7 @@ My work for ME193, one folder per assignment, roughly in the order we did them.
 | 05 | [Minifig Detection](05-Minifig-Detection/) | YOLOv8 trained on photos of a green LEGO minifig; the laptop tracks it and sends its position over MQTT to an Arduino UnoQ car. Includes the dataset and training runs. |
 | 06 | [Ping-Pong](06-Ping-Pong/) | Virtual ping-pong with the Double Motor as the paddle: MediaPipe Pose, IMU swing detection, AprilTag menus, haptic feedback, and the record streak published over MQTT. |
 | 07 | [Sumo Wrestler](07-Sumo/) | LEGO sumo robot with shared control: Xbox controller driving plus a UnoQ-read Color Sensor that forces the robot off the ring's edge, combined in a decision tree. |
-| 08 | [Activity Tracker](08-Activity-Tracker/) | Arduino UnoQ + MPU6050 on the ankle classifies standing / walking / running / biking / hopping with a threshold model and a hand-written KNN, served as a phone web page with an animated stick-figure bunny and live motion graphs. |
+| 08 | [Gait Identifier](08-Gait-Identifier/) | Arduino UnoQ + MPU6050 on the ankle classifies standing / walking / running / biking / hopping with a threshold model and a hand-written KNN, served as a phone web page with an animated stick-figure bunny and live motion graphs. |
 
 ## Setup
 
