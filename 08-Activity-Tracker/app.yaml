@@ -1,7 +1,7 @@
 # app.yaml: The main configuration file for your Arduino App.
 
 # The user-visible name of the application.
-name: Activity Tracker (Friend Edition)
+name: Activity Tracker
 
 # The icon for the application, can be an emoji or a short string.
 icon: 🐰

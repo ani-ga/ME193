@@ -1,4 +1,4 @@
-# Activity Tracker (Friend Edition) 🐰
+# Activity Tracker 🐰
 
 Wearable activity classifier for the Uno Q + MPU6050 (worn on the ankle).
 Classifies **standing still / walking / running / biking / hopping** using
@@ -27,7 +27,7 @@ predictions from a phone browser. Personalized with a bunny-themed page.
 
 ## Using it
 
-1. Deploy: `python3 tools/deploy.py activity-tracker-friend` (or Cmd+Shift+B in
+1. Deploy: `python3 tools/deploy.py <app-folder>` (or Cmd+Shift+B in
    VS Code with a file from this app open → "Run on UNO Q").
 2. Open the printed URL (`http://<board-ip>:7000`) on your phone, on the same
    Wi-Fi as the board.
