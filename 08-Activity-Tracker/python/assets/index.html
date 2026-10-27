@@ -1,0 +1,355 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity Tracker 🐰</title>
+  <style>
+    body {
+      font-family: -apple-system, sans-serif; margin: 0;
+      padding: 16px; padding-top: 32vh;
+      color: #fff;
+      min-height: 100vh; box-sizing: border-box;
+      background: linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)), url('background.jpg');
+      background-size: cover;
+      background-position: center top;
+      background-attachment: fixed;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    /* Translucent + blurred so the photo still reads through, but text/buttons stay legible on any part of it. */
+    .card {
+      background: rgba(130, 130, 130, 0.28);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px; padding: 16px; margin-bottom: 16px;
+    }
+    .predictions { display: flex; gap: 12px; }
+    .predictions div { flex: 1; text-align: center; }
+    .predictions .label { font-size: 12px; color: #ddd; text-transform: uppercase; }
+    .predictions .value { font-size: 20px; font-weight: bold; margin-top: 4px; }
+    .labels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    button {
+      font-size: 16px; padding: 14px; border-radius: 10px; border: none; cursor: pointer;
+      text-shadow: none; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    button.record { background: #2a6; color: white; }
+    button.record.active { background: #c33; }
+    button.stop { background: #c33; color: white; width: 100%; margin-top: 8px; }
+    button.train { background: #36c; color: white; width: 100%; }
+    #status-line { font-size: 13px; color: #eee; margin-top: 8px; }
+    .stage { border-radius: 10px; overflow: hidden; text-shadow: none; }
+    .stage svg { display: block; width: 100%; height: auto; }
+    .stage-caption { text-align: center; margin-top: 8px; font-weight: bold; }
+    canvas.graph { width: 100%; height: 110px; display: block; background: rgba(0,0,0,.25); border-radius: 8px; }
+    .graph-title { font-size: 12px; color: #ddd; text-transform: uppercase; margin: 8px 0 4px; display:flex; justify-content:space-between; }
+  </style>
+</head>
+<body>
+  <h1>🐰 Activity Tracker</h1>
+  <div id="status-line">connecting...</div>
+
+  <div class="card">
+    <div class="stage" id="stage">
+      <svg viewBox="0 0 300 170" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#8fd3ff"/><stop offset="1" stop-color="#e4f6ff"/></linearGradient></defs>
+        <rect width="300" height="170" fill="url(#sky)"/>
+        <circle cx="255" cy="30" r="14" fill="#ffe27a"/>
+        <rect y="150" width="300" height="20" fill="#7cc66a"/>
+        <g id="tufts" stroke="#4f9a45" stroke-width="2" stroke-linecap="round"></g>
+        <g id="bike" style="display:none" fill="none" stroke="#3b2f4a" stroke-width="3" stroke-linecap="round">
+          <g id="wheelB"><circle r="20"/><path d="M-20 0H20M0 -20V20" stroke-width="1"/></g>
+          <g id="wheelF"><circle r="20"/><path d="M-20 0H20M0 -20V20" stroke-width="1"/></g>
+          <path id="frame"/>
+        </g>
+        <g id="bunny" fill="none" stroke="#3b2f4a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline id="armB" opacity=".55"/><polyline id="legB" opacity=".55"/>
+          <polyline id="earB" opacity=".55" stroke-width="8"/>
+          <circle id="tail" r="5" fill="#fff" stroke-width="2.5"/>
+          <polyline id="torso"/>
+          <polyline id="legF"/><polyline id="armF"/>
+          <polyline id="earF" stroke-width="8"/><polyline id="earFi" stroke="#ff9ec0" stroke-width="3.5"/>
+          <circle id="head" r="9" fill="#fff"/>
+          <circle id="eye" r="1.6" fill="#3b2f4a" stroke="none"/>
+          <circle id="nose" r="1.6" fill="#ff7aa8" stroke="none"/>
+        </g>
+      </svg>
+    </div>
+    <div class="stage-caption" id="stage-caption">collecting data...</div>
+  </div>
+
+  <div class="card">
+    <div class="graph-title"><span>Motion intensity (g, beyond gravity)</span><span id="intensity-now"></span></div>
+    <canvas class="graph" id="g-intensity"></canvas>
+    <div class="graph-title"><span>Rotation (°/s)</span><span id="rotation-now"></span></div>
+    <canvas class="graph" id="g-rotation"></canvas>
+    <div style="font-size:11px;color:#ccc;margin-top:6px">Last 10 seconds from the sensor.</div>
+  </div>
+
+  <div class="card">
+    <div class="predictions">
+      <div>
+        <div class="label">Model 1 (one axis)</div>
+        <div class="value" id="prediction1">-</div>
+      </div>
+      <div>
+        <div class="label">Model 2 (full IMU, KNN)</div>
+        <div class="value" id="prediction2">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Calibration</div>
+    <div class="labels" id="label-buttons"></div>
+    <button class="stop" id="stop-btn">Stop Recording</button>
+    <div id="counts" style="margin-top:12px; font-size: 13px; color: #aaa;"></div>
+  </div>
+
+  <div class="card">
+    <button class="train" id="train-btn">Train Models</button>
+    <div id="train-result" style="margin-top: 8px; font-size: 13px; color: #aaa;"></div>
+  </div>
+
+<script>
+const labelButtonsEl = document.getElementById('label-buttons');
+const stopBtn = document.getElementById('stop-btn');
+const trainBtn = document.getElementById('train-btn');
+
+let labels = [];
+let currentRecordingLabel = null;
+
+const LABEL_ICONS = {
+  standing: '🧍', walking: '🚶', running: '🏃', biking: '🚴', hopping: '🐰',
+};
+
+async function api(method, path, query) {
+  // The server reads plain parameters (like label: str) as URL query
+  // parameters, not a JSON body - so build the query string ourselves.
+  const qs = query ? '?' + new URLSearchParams(query).toString() : '';
+  const res = await fetch(path + qs, { method });
+  return res.json();
+}
+
+function renderLabelButtons() {
+  labelButtonsEl.innerHTML = '';
+  for (const label of labels) {
+    const btn = document.createElement('button');
+    btn.className = 'record' + (label === currentRecordingLabel ? ' active' : '');
+    btn.textContent = (LABEL_ICONS[label] || '') + ' Record ' + label;
+    btn.onclick = () => api('POST', '/start_recording', { label }).then(refresh);
+    labelButtonsEl.appendChild(btn);
+  }
+}
+
+stopBtn.onclick = () => api('POST', '/stop_recording').then(refresh);
+
+trainBtn.onclick = async () => {
+  const result = await api('POST', '/train');
+  const acc = result.loo_accuracy;
+  document.getElementById('train-result').textContent =
+    `Trained on ${result.rows} windows. Model 2 leave-one-out accuracy: ` +
+    (acc === null || acc === undefined ? 'n/a (need more data)' : (acc * 100).toFixed(0) + '%');
+};
+
+
+const NAMES = {
+  standing: 'Bunny is standing still', walking: 'Bunny is walking',
+  running: 'Bunny is running', biking: 'Bunny is biking', hopping: 'Bunny is hopping',
+};
+const $ = id => document.getElementById(id);
+const GROUND = 150, LEG = 22, DEG = Math.PI / 180;
+let shownActivity = null;
+let bunnyActivity = 'standing';
+let scrollX = 0, lastT = null;
+
+function showActivity(label) {
+  if (label === shownActivity) return;
+  shownActivity = label;
+  if (NAMES[label]) bunnyActivity = label;
+  $('stage-caption').textContent = NAMES[label] || label;
+  $('bike').style.display = label === 'biking' ? 'block' : 'none';
+}
+
+const pts = a => a.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+const polar = (p, ang, len) => [p[0] + Math.sin(ang * DEG) * len, p[1] + Math.cos(ang * DEG) * len];
+
+// Two-bone IK: hip -> knee -> foot, knee bends forward (+x).
+function leg(hip, foot) {
+  const dx = foot[0] - hip[0], dy = foot[1] - hip[1];
+  const d = Math.min(Math.hypot(dx, dy), 2 * LEG - 0.01);
+  const hgt = Math.sqrt(LEG * LEG - d * d / 4);
+  const mx = hip[0] + dx / 2, my = hip[1] + dy / 2;
+  let nx = -dy / Math.hypot(dx, dy), ny = dx / Math.hypot(dx, dy);
+  if (nx < 0) { nx = -nx; ny = -ny; }
+  const knee = [mx + nx * hgt, my + ny * hgt];
+  return [hip, knee, [hip[0] + dx * (d / Math.hypot(dx, dy)), hip[1] + dy * (d / Math.hypot(dx, dy))]];
+}
+
+function pose(act, t) {
+  const hipY = GROUND - 2 * LEG * 0.97;
+  let hip = [150, hipY], lean = 0, speed = 0;
+  let footF, footB, armF, armB, earFlop = 0;       // arm = [shoulderAngle, elbowAngle]
+  const L = 2 * LEG * 0.97;
+  if (act === 'standing') {
+    hip[1] += Math.sin(t * 2) * 0.8;
+    footF = [150 + 5, GROUND]; footB = [150 - 5, GROUND];
+    armF = [8 + Math.sin(t * 2) * 3, 15]; armB = [-8, -10];
+    earFlop = Math.sin(t * 1.3) * 6;
+  } else if (act === 'walking') {
+    const p = t * 2 * Math.PI * 1.2; speed = 45; lean = 4;
+    const f = ph => [150 + 16 * Math.sin(ph), GROUND - Math.max(0, Math.cos(ph)) * 7];
+    footF = f(p); footB = f(p + Math.PI);
+    hip[1] += Math.abs(Math.cos(p)) * -1.5;
+    armF = [-22 * Math.sin(p), 20]; armB = [22 * Math.sin(p), 20];
+    earFlop = Math.sin(p * 2) * 8;
+  } else if (act === 'running') {
+    const p = t * 2 * Math.PI * 2.4; speed = 140; lean = 20;
+    const f = ph => [150 + 26 * Math.sin(ph), GROUND - 4 - Math.max(0, Math.cos(ph)) * 18];
+    footF = f(p); footB = f(p + Math.PI);
+    hip[1] += 4 - Math.abs(Math.sin(p)) * 6;
+    armF = [-55 * Math.sin(p), 85]; armB = [55 * Math.sin(p), 85];
+    earFlop = 28 + Math.sin(p * 2) * 8;
+  } else if (act === 'hopping') {
+    const per = 0.9, ph = (t % per) / per;           // 0..1 per hop
+    const air = Math.sin(ph * Math.PI);              // 0 on ground, 1 at peak
+    const lift = Math.pow(air, 0.8) * 55;
+    const crouch = Math.max(0, 1 - ph * 6) * 10 + Math.max(0, ph - 0.85) * 60;
+    hip[1] = hipY + crouch - lift; speed = 60; lean = 8 - air * 14;
+    const fy = GROUND - lift;
+    footF = [150 + 6, fy - (air > 0.05 ? air * 6 : 0)]; footB = [150 - 5, fy - (air > 0.05 ? air * 3 : 0)];
+    armF = [-30 - air * 70, 30]; armB = [-20 - air * 80, 30];
+    earFlop = -air * 30 + crouch * 2;
+  } else { // biking
+    const p = t * 2 * Math.PI * 1.1; speed = 110; lean = 22;
+    hip = [140, 96];
+    const crank = [152, 128], r = 11;
+    footF = [crank[0] + r * Math.cos(p), crank[1] + r * Math.sin(p)];
+    footB = [crank[0] - r * Math.cos(p), crank[1] - r * Math.sin(p)];
+    armF = [60, 50]; armB = [58, 48];
+    earFlop = 30;
+  }
+  const shoulder = [hip[0] + Math.sin(lean * DEG) * 26, hip[1] - Math.cos(lean * DEG) * 26];
+  const head = [shoulder[0] + Math.sin(lean * DEG) * 11, shoulder[1] - Math.cos(lean * DEG) * 11];
+  return { hip, shoulder, head, lean, speed, footF, footB, armF, armB, earFlop };
+}
+
+function arm(sh, a, bike) {
+  if (bike) {                                   // hands on the handlebar
+    const hand = [182, 85];
+    return [sh, [(sh[0] + hand[0]) / 2, (sh[1] + hand[1]) / 2 + 5], hand];
+  }
+  const elbow = polar(sh, a[0], 15), hand = polar(elbow, a[0] + a[1], 15);
+  return [sh, elbow, hand];
+}
+
+function render(t) {
+  const P = pose(bunnyActivity, t), biking = bunnyActivity === 'biking';
+  const bunny = $('bunny');
+  bunny.setAttribute('transform', '');
+  $('legF').setAttribute('points', pts(leg(P.hip, P.footF)));
+  $('legB').setAttribute('points', pts(leg(P.hip, P.footB)));
+  $('torso').setAttribute('points', pts([P.hip, P.shoulder]));
+  $('armF').setAttribute('points', pts(arm(P.shoulder, P.armF, biking)));
+  $('armB').setAttribute('points', pts(arm(P.shoulder, P.armB, biking)));
+  $('head').setAttribute('cx', P.head[0]); $('head').setAttribute('cy', P.head[1]);
+  $('eye').setAttribute('cx', P.head[0] + 3.5); $('eye').setAttribute('cy', P.head[1] - 2);
+  $('nose').setAttribute('cx', P.head[0] + 8.5); $('nose').setAttribute('cy', P.head[1] + 1);
+  $('tail').setAttribute('cx', P.hip[0] - 7); $('tail').setAttribute('cy', P.hip[1] - 2);
+  // Ears: two segments, angle measured back from straight up.
+  const ear = (dx, flop, len) => {
+    const root = [P.head[0] + dx, P.head[1] - 8];
+    const a1 = 8 + flop * 0.4 - P.lean * 0.5, a2 = a1 + flop * 0.6;
+    const m = [root[0] - Math.sin(a1 * DEG) * len / 2, root[1] - Math.cos(a1 * DEG) * len / 2];
+    return [root, m, [m[0] - Math.sin(a2 * DEG) * len / 2, m[1] - Math.cos(a2 * DEG) * len / 2]];
+  };
+  $('earF').setAttribute('points', pts(ear(1, P.earFlop, 24)));
+  $('earB').setAttribute('points', pts(ear(-3, P.earFlop * 0.8 - 4, 22)));
+  $('earFi').setAttribute('points', pts(ear(1, P.earFlop, 24).map((p, i) => i ? p : [p[0], p[1] - 3])));
+
+  if (biking) {
+    const w = t * 2 * Math.PI * 1.1 * 1.3 * 180 / Math.PI;
+    $('wheelB').setAttribute('transform', `translate(118,130) rotate(${w})`);
+    $('wheelF').setAttribute('transform', `translate(190,130) rotate(${w})`);
+    $('frame').setAttribute('d', 'M118 130 L140 100 L176 100 L190 130 M140 100 L152 128 L176 100 M176 100 L172 86 L182 84 M132 100 L148 100');
+  }
+}
+
+function frame(ms) {
+  const t = ms / 1000;
+  const dt = lastT === null ? 0 : t - lastT; lastT = t;
+  const P = pose(bunnyActivity, t);
+  scrollX = (scrollX + P.speed * dt) % 300;
+  // Ground tufts scroll left to show motion.
+  let d = '';
+  for (let i = 0; i < 10; i++) {
+    const x = ((i * 30 - scrollX) % 300 + 300) % 300, y = 158 + (i % 3) * 4;
+    d += `M${x} ${y}l-3 -6M${x} ${y}l0 -7M${x} ${y}l3 -6`;
+  }
+  $('tufts').innerHTML = `<path d="${d}"/>`;
+  render(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function drawGraph(id, data, color, minMax) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const max = Math.max(minMax, ...data) * 1.1;
+  g.strokeStyle = 'rgba(255,255,255,.15)'; g.lineWidth = 1;
+  for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(0, h * i / 4); g.lineTo(w, h * i / 4); g.stroke(); }
+  g.fillStyle = '#ddd'; g.font = '10px sans-serif'; g.fillText(max.toFixed(max < 10 ? 1 : 0), 4, 11);
+  if (data.length < 2) return;
+  g.strokeStyle = color; g.lineWidth = 2; g.lineJoin = 'round'; g.beginPath();
+  data.forEach((v, i) => {
+    const x = w * i / (data.length - 1), y = h - 4 - (h - 8) * v / max;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+}
+
+async function refreshGraphs() {
+  try {
+    const t = await api('GET', '/telemetry');
+    drawGraph('g-intensity', t.intensity, '#ffd54a', 1);
+    drawGraph('g-rotation', t.rotation, '#6fe3ff', 100);
+    const last = a => a.length ? a[a.length - 1] : 0;
+    document.getElementById('intensity-now').textContent = last(t.intensity).toFixed(2) + ' g';
+    document.getElementById('rotation-now').textContent = last(t.rotation).toFixed(0) + ' °/s';
+  } catch (e) {}
+}
+
+async function refresh() {
+  const s = await api('GET', '/status');
+  labels = s.labels;
+  currentRecordingLabel = s.recording ? s.recording_label : null;
+  renderLabelButtons();
+
+  document.getElementById('prediction1').textContent = s.prediction1;
+  document.getElementById('prediction2').textContent = s.prediction2;
+  showActivity(s.prediction2);
+
+  const countsText = Object.entries(s.counts_by_label || {})
+    .map(([label, n]) => `${label}: ${n}`).join(' · ') || 'no calibration data yet';
+  document.getElementById('counts').textContent = countsText +
+    (s.recording ? ` (recording ${s.recording_label}, +${s.rows_recorded_this_session} this session)` : '');
+
+  document.getElementById('status-line').textContent =
+    s.connected ? 'connected to sketch' : 'not hearing from the sketch - check the MPU6050 wiring';
+}
+
+renderLabelButtons();
+refresh();
+setInterval(refresh, 400);
+refreshGraphs();
+setInterval(refreshGraphs, 300);
+</script>
+</body>
+</html>
