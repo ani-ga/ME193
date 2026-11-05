@@ -55,28 +55,34 @@ _Draft written by Claude. Rewrite parts in your own words before submitting; the
 
 ## Results and uncertainty
 
-Trained on 13 recorded trials (about 6 minutes of data from 1 person, sensor on the ankle), tested on 3 trials held out of training (`python/results/metrics.json`, `accuracy.png`). Peak settings (threshold 0.6, minimum gap 0.35 s) were chosen on the training trials only. With the first settings (0.5 and 0.25 s) the net overcounted by about 30% because one step produced two peaks.
+**Test set:** 6 fresh trials of exactly 10 steps each (true count typed in, mixed slow/normal/fast), recorded after training and never used for training or for choosing any setting (`python/test_trials/`, `python evaluate.py --test-dir test_trials`). Training used 13 trials (about 6 minutes, one person, sensor on the ankle).
 
-| Held-out trial | True steps | Neural net | Baseline (no net) |
+| Trial | True steps | Neural net | Baseline (no net) |
 |---|---|---|---|
-| walking | 35 | 40 | 39 |
-| walking | 42 | 44 | 46 |
-| not stepping | 0 | 0 | 2 |
+| 1 | 10 | 12 | 13 |
+| 2 | 10 | 11 | 14 |
+| 3 | 10 | 11 | 12 |
+| 4 | 10 | 14 | 13 |
+| 5 | 10 | 12 | 13 |
+| 6 | 10 | 11 | 11 |
 
 | | Neural net | Baseline (peak-pick on \|accel\|) |
 |---|---|---|
-| Held-out trials | 3 | 3 |
-| Mean error (steps) | +2.33 | +3.33 |
-| Mean absolute error (steps) | 2.33 | 3.33 |
-| Std of error (steps) | 2.52 | 1.15 |
-| Mean absolute % error (walking trials) | 9.5% | 10.5% |
-| False steps on the not-step trial | 0 | 2 |
+| Mean error | **+1.83 steps** (18%) | +2.67 steps (27%) |
+| Std of error | 1.17 steps | 1.03 steps |
+| 95% CI of the mean error (Student's t, n = 6) | +0.6 to +3.1 steps | +1.6 to +3.8 steps |
+| 95% range for one new 10-step walk | -1.4 to +5.1 steps | -0.2 to +5.5 steps |
+| False steps on the 6 not-step trials | 0 | not tested on this set |
 
-**Live test on the board:** walking 20 steps counted by hand, the page showed 20.
+In words: on a 10-step walk the net typically reports 11 to 13 steps. It overcounts every time, so the error is mostly a consistent bias (the interval does not include zero), not random noise. The net is a bit better than the no-net baseline, and the lower mean error is clear, but with 6 trials and overlapping intervals the two are not cleanly separated.
 
-**How much to trust this.** Only 3 trials were held out, so these averages are rough: one trial can move them by a couple of steps, and the 95% interval that `evaluate.py` prints (about -2.6 to +7.3 steps for the net) rests on 3 points. Both methods overcount slightly on walking; the net's clear advantage so far is rejecting non-step motion (0 false steps on every one of the 6 not-step trials, held-out or not). All trials come from one person and one sensor placement, so accuracy on someone else, or with the sensor strapped differently, is untested. For a stronger analysis, record fresh test trials with known counts and run `python evaluate.py --test-dir <folder>`.
+**Why it overcounts.** Checking where the extra peaks fall: not at the start or end of a trial, but in the middle, where a normal 0.7 s step is occasionally split into two peaks 0.35-0.5 s apart. The net's minimum peak gap (0.35 s) was chosen on training trials, where steps were slightly faster, and these short trials are slower and more varied. Percent errors look large (18%) partly because the walks are short: one extra step is 10%. On the earlier 20-step live demo the page showed exactly 20.
 
-Known error sources: tap timing in the labels (people tap about 0.15 s late; `--lag` corrects the average), sensor placement shifts between trials, very slow or shuffling steps, double peaks at fast cadence, and edge effects at the start and end of a trial. The Bridge delivers only about 15 samples per second (each reading takes six separate calls), so the sharp impact at each foot strike is blurred; sending all six values in one call would likely help.
+**Earlier check on 3 held-out training-set trials** (35, 42 and 0 true steps): net 40, 44, 0; baseline 39, 46, 2. The net also counted 0 false steps on all 6 not-step training trials (standing, biking, arm swinging), where the baseline invented 2.
+
+**Limits.** One person, one sensor placement, and a small test set: accuracy on someone else, with the sensor strapped differently, or at running speed is untested. Known error sources: double peaks within a step (above), tap timing in the training labels (people tap about 0.15 s late; `--lag` corrects the average), very slow or shuffling steps, and the sensor sampling only about 15 times a second (each reading takes six separate Bridge calls), which blurs the foot-strike impact; sending all six values in one call would likely help.
+
+**Idea for improving it:** choose the peak gap and threshold by leave-one-trial-out testing across all the trials, or scale the minimum gap to the walker's current cadence, then re-test on a new fresh set.
 
 ## Reflection questions
 

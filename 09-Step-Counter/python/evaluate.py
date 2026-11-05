@@ -20,19 +20,31 @@ from steps_data import load_trial, load_trials
 
 HERE = Path(__file__).resolve().parent
 
+# two-sided 95% Student's t critical values by degrees of freedom
+T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262,
+       10: 2.228, 12: 2.179, 15: 2.131, 20: 2.086, 30: 2.042}
+for _d in range(1, 31):
+    T95.setdefault(_d, T95[min(k for k in T95 if k >= _d)])
+
 
 def summarize(name, truth, counted):
     err = counted - truth
     nonzero = truth > 0
     pct = 100.0 * err[nonzero] / truth[nonzero]
-    sd = err.std(ddof=1) if len(err) > 1 else float("nan")
+    n = len(err)
+    sd = err.std(ddof=1) if n > 1 else float("nan")
+    # 95% interval for the MEAN error, using Student's t (a plain +-1.96 is far
+    # too narrow with only a handful of trials).
+    half = T95.get(n - 1, 1.96) * sd / np.sqrt(n) if n > 1 else float("nan")
     return {
         "method": name,
         "trials": int(len(truth)),
         "mean_error_steps": float(err.mean()),
         "mean_abs_error_steps": float(np.abs(err).mean()),
         "error_sd_steps": float(sd),
-        "interval95_steps": [float(err.mean() - 1.96 * sd), float(err.mean() + 1.96 * sd)],
+        "interval95_mean_error_steps": [float(err.mean() - half), float(err.mean() + half)],
+        "prediction_interval95_steps": [float(err.mean() - T95.get(n - 1, 1.96) * sd * np.sqrt(1 + 1 / n)) if n > 1 else float("nan"),
+                                        float(err.mean() + T95.get(n - 1, 1.96) * sd * np.sqrt(1 + 1 / n)) if n > 1 else float("nan")],
         "mean_abs_pct_error": float(np.abs(pct).mean()) if len(pct) else None,
         "mean_pct_error": float(pct.mean()) if len(pct) else None,
         "pct_error_sd": float(pct.std(ddof=1)) if len(pct) > 1 else None,
@@ -73,7 +85,8 @@ def main():
     for m in metrics:
         print(f"\n{m['method']}: mean error {m['mean_error_steps']:+.2f} steps, "
               f"MAE {m['mean_abs_error_steps']:.2f}, sd {m['error_sd_steps']:.2f}, "
-              f"95% interval {m['interval95_steps'][0]:+.1f} to {m['interval95_steps'][1]:+.1f} steps, "
+              f"95% CI of mean error {m['interval95_mean_error_steps'][0]:+.1f} to {m['interval95_mean_error_steps'][1]:+.1f}, "
+              f"95% range for one new trial {m['prediction_interval95_steps'][0]:+.1f} to {m['prediction_interval95_steps'][1]:+.1f} steps, "
               f"mean |error| {m['mean_abs_pct_error']}% (walking trials), "
               f"false steps on zero-step trials: {m['false_steps_when_truth_is_0']}")
 
