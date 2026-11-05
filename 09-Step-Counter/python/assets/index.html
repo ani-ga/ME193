@@ -1,0 +1,169 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Step Counter 👣</title>
+  <style>
+    body {
+      font-family: -apple-system, sans-serif; margin: 0;
+      padding: 16px; padding-top: 22vh;
+      color: #fff; min-height: 100vh; box-sizing: border-box;
+      background: linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.55)), url('background.jpg');
+      background-size: cover; background-position: center top; background-attachment: fixed;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .card {
+      background: rgba(130, 130, 130, 0.28);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px; padding: 16px; margin-bottom: 16px;
+    }
+    .big { text-align: center; }
+    .big .num { font-size: 84px; font-weight: bold; line-height: 1; }
+    .big .cap { font-size: 13px; color: #ddd; text-transform: uppercase; margin-top: 4px; }
+    .row { display: flex; gap: 12px; margin-top: 12px; }
+    .row div { flex: 1; text-align: center; }
+    .row .v { font-size: 22px; font-weight: bold; }
+    .row .l { font-size: 12px; color: #ddd; text-transform: uppercase; }
+    .labels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    button {
+      font-size: 16px; padding: 14px; border-radius: 10px; border: none; cursor: pointer;
+      text-shadow: none; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    button.pick { background: #456; color: white; }
+    button.pick.sel { background: #2a6; }
+    button.go { background: #2a6; color: white; width: 100%; margin-top: 10px; }
+    button.stop { background: #c33; color: white; width: 100%; margin-top: 8px; }
+    button.reset { background: #36c; color: white; width: 100%; }
+    button.tap { background: #f90; color: #222; width: 100%; padding: 36px; font-size: 24px; font-weight: bold; margin-top: 10px; }
+    input { font-size: 16px; padding: 10px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; margin-top: 10px; }
+    #status-line, #rec-info { font-size: 13px; color: #eee; margin-top: 8px; }
+    canvas.graph { width: 100%; height: 110px; display: block; background: rgba(0,0,0,.25); border-radius: 8px; }
+    .graph-title { font-size: 12px; color: #ddd; text-transform: uppercase; margin: 8px 0 4px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>👣 Step Counter</h1>
+  <div id="status-line">connecting...</div>
+
+  <div class="card big" style="margin-top:12px">
+    <div class="num" id="steps">0</div>
+    <div class="cap" id="method">steps</div>
+    <div class="row">
+      <div><div class="v" id="baseline">0</div><div class="l">baseline (no net)</div></div>
+      <div><div class="v" id="cadence">-</div><div class="l">steps / min</div></div>
+    </div>
+    <button class="reset" style="margin-top:12px" id="reset-btn">Reset count</button>
+  </div>
+
+  <div class="card">
+    <div class="graph-title">Step probability from the net (last 6 s)</div>
+    <canvas class="graph" id="g-curve"></canvas>
+    <div class="graph-title">Motion intensity (g beyond gravity)</div>
+    <canvas class="graph" id="g-intensity"></canvas>
+  </div>
+
+  <div class="card">
+    <b>Record training data</b>
+    <div class="labels" id="label-buttons"></div>
+    <input id="known" type="number" min="0" inputmode="numeric" placeholder="true step count (optional, for testing)">
+    <button class="go" id="start-btn">Start recording</button>
+    <div id="rec-controls" class="hidden">
+      <button class="tap" id="tap-btn">TAP on every foot strike</button>
+      <button class="stop" id="stop-btn">Stop recording</button>
+    </div>
+    <div id="rec-info"></div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+let labels = [], picked = null, recording = false;
+const ICONS = { step: '👣', not_step: '🚫' };
+
+async function api(method, path, query) {
+  // The server reads plain parameters (like label: str) as URL query parameters.
+  const qs = query ? '?' + new URLSearchParams(query).toString() : '';
+  const res = await fetch(path + qs, { method });
+  return res.json();
+}
+
+function renderPicks() {
+  const el = $('label-buttons');
+  el.innerHTML = '';
+  for (const label of labels) {
+    const b = document.createElement('button');
+    b.className = 'pick' + (label === picked ? ' sel' : '');
+    b.textContent = (ICONS[label] || '') + ' ' + (label === 'step' ? 'steps (tap each foot strike)' : 'not steps');
+    b.onclick = () => { picked = label; renderPicks(); };
+    el.appendChild(b);
+  }
+}
+
+$('start-btn').onclick = async () => {
+  if (!picked) { $('rec-info').textContent = 'Pick an activity first.'; return; }
+  await api('POST', '/start_recording', { label: picked, known_count: $('known').value });
+  $('known').value = '';   // so one trial's count isn't silently reused on the next
+  refresh();
+};
+$('stop-btn').onclick = () => api('POST', '/stop_recording').then(refresh);
+$('reset-btn').onclick = () => api('POST', '/reset').then(refresh);
+// Fire on touch start (not click) so the tap lands as close to the foot strike as possible.
+$('tap-btn').addEventListener('pointerdown', e => { e.preventDefault(); api('POST', '/tap'); });
+
+function drawGraph(id, data, color, minMax, peaks) {
+  const c = $(id), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const max = Math.max(minMax, ...data) * 1.1;
+  if (peaks) {  // threshold line at 0.5
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.setLineDash([4, 4]);
+    const y = h - 4 - (h - 8) * 0.6 / max;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); g.setLineDash([]);
+  }
+  if (data.length < 2) return;
+  g.strokeStyle = color; g.lineWidth = 2; g.lineJoin = 'round'; g.beginPath();
+  data.forEach((v, i) => {
+    const x = w * i / (data.length - 1), y = h - 4 - (h - 8) * v / max;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+}
+
+let lastSteps = 0, lastSeconds = 0;
+async function refreshGraphs() {
+  try {
+    const t = await api('GET', '/telemetry');
+    drawGraph('g-curve', t.curve, '#7dff9a', 1, true);
+    drawGraph('g-intensity', t.intensity, '#ffd54a', 1, false);
+  } catch (e) {}
+}
+
+async function refresh() {
+  const s = await api('GET', '/status');
+  labels = labels.length ? labels : s.labels;
+  if (!$('label-buttons').children.length) renderPicks();
+  recording = s.recording;
+  $('steps').textContent = s.steps;
+  $('baseline').textContent = s.baseline_steps;
+  $('method').textContent = s.using_net ? 'steps (neural net)' : 'steps (baseline - no trained net yet)';
+  $('cadence').textContent = s.seconds > 5 ? Math.round(s.steps * 60 / s.seconds) : '-';
+  $('start-btn').classList.toggle('hidden', recording);
+  $('rec-controls').classList.toggle('hidden', !recording);
+  $('rec-info').textContent = recording
+    ? `recording ${s.recording_label}: ${s.recording_rows} samples, ${s.recording_taps} taps`
+    : `${s.trials_saved} trial(s) saved on the board`;
+  $('status-line').textContent =
+    s.connected ? 'connected to sketch' : 'not hearing from the sketch - check the MPU6050 wiring';
+}
+
+refresh(); setInterval(refresh, 400);
+refreshGraphs(); setInterval(refreshGraphs, 300);
+</script>
+</body>
+</html>

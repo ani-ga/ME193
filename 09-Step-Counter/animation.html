@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the step counter works</title>
+<style>
+  body { margin: 0; background: #14161c; color: #eee; font-family: -apple-system, Helvetica, sans-serif; text-align: center; }
+  h1 { font-size: 20px; margin: 14px 0 2px; }
+  #cap { font-size: 17px; margin: 6px auto; max-width: 900px; min-height: 52px; padding: 0 12px; }
+  canvas { width: min(96vw, 960px); aspect-ratio: 16 / 9; background: #1b1e27; border-radius: 10px; }
+  .bar button { background: #2d3345; color: #eee; border: none; padding: 8px 12px; margin: 3px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .bar button.on { background: #2a8f5a; }
+</style>
+</head>
+<body>
+<h1>👣 How the step counter works</h1>
+<div id="cap"></div>
+<canvas id="c" width="960" height="540"></canvas>
+<div class="bar" id="bar"></div>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = 960, H = 540;
+const SEC = 11;                       // seconds per scene
+const COL = { bg: '#1b1e27', sig: '#ffd54a', gyro: '#6fe3ff', net: '#7dff9a', tap: '#ff9f43', grad: '#ff5c6c', fwd: '#5aa9ff', dim: '#556' };
+
+// Fake but realistic-looking signals: a spike at each foot strike (every 0.55 s).
+// Real per-epoch training loss from our run (40 epochs, results/loss_history.json).
+const LOSS = [0.852, 0.761, 0.701, 0.701, 0.646, 0.643, 0.622, 0.586, 0.592, 0.553, 0.548, 0.52, 0.52, 0.511, 0.469, 0.482, 0.481, 0.472, 0.478, 0.442, 0.455, 0.458, 0.441, 0.441, 0.445, 0.439, 0.432, 0.431, 0.417, 0.42, 0.406, 0.418, 0.404, 0.408, 0.404, 0.411, 0.394, 0.397, 0.39, 0.4];
+const lossAt = x => { const f = Math.min(Math.max(x, 0), 1) * (LOSS.length - 1), i = Math.floor(f); return LOSS[i] + (LOSS[Math.min(i + 1, LOSS.length - 1)] - LOSS[i]) * (f - i); };
+const STEP = 0.55;
+const strikes = Array.from({ length: 200 }, (_, i) => 0.4 + i * STEP);
+function accel(t) {
+  let v = 1 + 0.03 * Math.sin(t * 40);
+  for (const s of strikes) { const d = t - s; if (Math.abs(d) < 0.3) v += 0.9 * Math.exp(-(d * d) / (2 * 0.04 * 0.04)) * (d > -0.05 ? 1 : 0.6); }
+  return v;
+}
+function gyro(t) { return 0.4 * Math.sin(t * 2 * Math.PI / (STEP * 2)) + 0.1 * Math.sin(t * 31); }
+// What a decent trained net outputs: a bump at each strike.
+function netOut(t, quality = 1) {
+  let p = 0.04 * (1 - quality);
+  for (const s of strikes) { const d = t - s - 0.02; p = Math.max(p, Math.exp(-(d * d) / (2 * 0.05 * 0.05)) * quality); }
+  return p + (1 - quality) * 0.18 * (0.5 + 0.5 * Math.sin(t * 9));
+}
+function tapTarget(t) { let p = 0; for (const s of strikes) { const d = t - s; p = Math.max(p, Math.exp(-(d * d) / (2 * 0.06 * 0.06))); } return p; }
+
+function text(s, x, y, size = 16, color = '#eee', align = 'left') { g.fillStyle = color; g.font = `${size}px -apple-system, Helvetica, sans-serif`; g.textAlign = align; g.fillText(s, x, y); }
+function trace(f, x0, y0, w, h, t0, span, color, lo, hi, lw = 2) {
+  g.strokeStyle = color; g.lineWidth = lw; g.beginPath();
+  for (let i = 0; i <= w; i += 2) {
+    const v = f(t0 + span * i / w), y = y0 + h - (v - lo) / (hi - lo) * h;
+    i ? g.lineTo(x0 + i, y) : g.moveTo(x0 + i, y);
+  }
+  g.stroke();
+}
+function box(x, y, w, h, color = COL.dim) { g.strokeStyle = color; g.lineWidth = 1.5; g.strokeRect(x, y, w, h); }
+function ease(x) { return x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x); }
+
+const scenes = [
+  { name: '1. Sensor',
+    cap: 'An MPU6050 on the ankle measures acceleration and rotation 50 times a second: six channels (ax, ay, az, gx, gy, gz). We add two more, the overall acceleration size and rotation size, which don\'t care how the sensor is rotated. Each foot strike shows up as a spike.',
+    draw(p, T) {
+      const span = 5, t0 = T * 1.0;
+      text('Raw IMU signal (scrolling)', 40, 50, 18);
+      text('accel z (g)', 40, 85, 14, COL.sig); trace(accel, 40, 90, 880, 120, t0, span, COL.sig, 0.6, 2.2);
+      text('gyro x (deg/s)', 40, 250, 14, COL.gyro); trace(gyro, 40, 255, 880, 90, t0, span, COL.gyro, -1, 1);
+      const ch = ['ax', 'ay', 'az', 'gx', 'gy', 'gz', '|a|', '|g|'];
+      ch.forEach((n, i) => { const x = 60 + i * 110; g.fillStyle = i < 6 ? '#2d3a55' : '#3a2d55'; g.fillRect(x, 400, 90, 60); text(n, x + 45, 438, 22, '#fff', 'center'); });
+      text('8 channels, normalized, fed to the network', 480, 495, 16, '#aaa', 'center');
+    } },
+  { name: '2. The network',
+    cap: 'The input is a 2.5 second window of those 8 channels. The network is three 1D convolution layers: each slides small learned filters along time, and later layers look further apart (dilation 1, 2, 4), so every moment is judged using about 1.1 s of context. Convolutions are why it finds a step wherever it happens in the window.',
+    draw(p, T) {
+      const wx = 40 + ease(p) * 420;     // sliding window
+      text('Input window slides along the signal', 40, 45, 16);
+      trace(accel, 40, 60, 880, 90, 0, 22, COL.sig, 0.6, 2.2, 1.5);
+      g.fillStyle = 'rgba(90,169,255,0.22)'; g.fillRect(wx, 55, 160, 100); box(wx, 55, 160, 100, COL.fwd);
+      const cols = [['Input (8 ch)', 7], ['Conv 1', 7], ['Conv 2', 7], ['Conv 3', 7], ['Output', 1]];
+      const nodeY = (n, k) => 330 + (k - (n - 1) / 2) * 36;
+      cols.forEach(([nm, n], ci) => {
+        const x = 130 + ci * 180;
+        text(nm, x, 200, 15, '#bbb', 'center');
+        if (ci < cols.length - 1) {
+          const n2 = cols[ci + 1][1];
+          for (let k = 0; k < n; k++) for (let m = 0; m < n2; m++) {
+            g.strokeStyle = 'rgba(150,170,200,0.10)'; g.beginPath(); g.moveTo(x, nodeY(n, k)); g.lineTo(x + 180, nodeY(n2, m)); g.stroke();
+          }
+        }
+        for (let k = 0; k < n; k++) {
+          const lit = 0.5 + 0.5 * Math.sin(T * 4 - ci * 1.2 + k);
+          g.fillStyle = `rgba(90,169,255,${0.2 + 0.7 * lit})`; g.beginPath(); g.arc(x, nodeY(n, k), 11, 0, 7); g.fill();
+        }
+      });
+      text('(16 filters per layer; 7 shown)', 480, 475, 13, '#789', 'center');
+      text('BatchNorm + ReLU after each conv layer', 480, 500, 15, '#aaa', 'center');
+    } },
+  { name: '3. Output and counting',
+    cap: 'For every sample the network outputs a number between 0 and 1: how likely a foot strike is right now. We pick the peaks above 0.6 that are at least 0.35 s apart, and each peak is one step. Counting peaks instead of guessing a total means overlapping windows never double-count.',
+    draw(p, T) {
+      const span = 6, t0 = T * 0.9;
+      text('Sensor signal', 40, 45, 16, COL.sig); trace(accel, 40, 55, 880, 110, t0, span, COL.sig, 0.6, 2.2);
+      text('Network output (step probability)', 40, 215, 16, COL.net); trace(t => netOut(t), 40, 225, 880, 140, t0, span, COL.net, 0, 1.15, 3);
+      const yT = 225 + 140 - 0.6 / 1.15 * 140; g.setLineDash([6, 6]); g.strokeStyle = '#aaa'; g.beginPath(); g.moveTo(40, yT); g.lineTo(920, yT); g.stroke(); g.setLineDash([]);
+      text('threshold 0.6', 925, yT - 4, 12, '#aaa', 'right');
+      let n = 0;
+      for (const s of strikes) {
+        const x = 40 + (s + 0.02 - t0) / span * 880;
+        if (x >= 40 && x <= 920) { g.fillStyle = COL.tap; g.beginPath(); g.arc(x, 225 + 140 - 1 / 1.15 * 140, 7, 0, 7); g.fill(); }
+        if (s + 0.02 < t0 + span * 0.995) n++;
+      }
+      text(String(n), 480, 470, 80, '#fff', 'center'); text('steps counted so far this session', 480, 500, 15, '#aaa', 'center');
+    } },
+  { name: '4. Learning signal',
+    cap: 'To learn, the network needs the right answer. While recording, you tap a button on every foot strike. Each tap becomes a smooth orange bump: the target. The loss (binary cross-entropy) measures the gap between the network\'s green curve and that target, and training tries to shrink it.',
+    draw(p, T) {
+      const q = 0.15 + 0.85 * ease(p * 1.2), t0 = 0, span = 5;
+      text(`Training epoch ${Math.round(1 + ease(p * 1.2) * 39)} of 40`, 40, 45, 18);
+      text('Your taps (target)', 40, 95, 15, COL.tap); trace(tapTarget, 40, 100, 880, 130, t0, span, COL.tap, 0, 1.1, 3);
+      text('Network output', 40, 270, 15, COL.net); trace(t => netOut(t, q), 40, 275, 880, 130, t0, span, COL.net, 0, 1.1, 3);
+      // gap shading
+      g.fillStyle = 'rgba(255,92,108,0.25)';
+      for (let i = 0; i < 880; i += 4) { const tt = span * i / 880, a = tapTarget(tt), b = netOut(tt, q); g.fillRect(40 + i, 100 + 130 - Math.max(a, b) / 1.1 * 130, 4, Math.abs(a - b) / 1.1 * 130 * 0.3); }
+      const loss = lossAt(ease(p * 1.2));
+      text(`loss = ${loss.toFixed(2)}`, 480, 470, 40, loss > 0.6 ? COL.grad : COL.net, 'center');
+      text('the bigger the gap, the bigger the loss', 480, 500, 15, '#aaa', 'center');
+    } },
+  { name: '5. Back-propagation',
+    cap: 'Each training step: (1) forward pass, a batch of windows flows left to right and produces a loss. (2) loss.backward() sends the error right to left; by the chain rule each layer works out how much every weight contributed to the error. (3) The optimizer nudges each weight a little in the direction that lowers the loss. Repeat thousands of times and the loss falls.',
+    draw(p, T) {
+      const cycle = (T * 0.45) % 1;       // 0-.4 forward, .4-.55 loss, .55-1 backward
+      const xs = [90, 250, 410, 570, 730], names = ['Input', 'Conv 1', 'Conv 2', 'Conv 3', 'Output'];
+      const mid = 190;
+      xs.forEach((x, i) => {
+        const ns = i === 4 ? 1 : 4;
+        for (let k = 0; k < ns; k++) {
+          const y = mid + (k - (ns - 1) / 2) * 50;
+          if (i < 4) { const ns2 = i === 3 ? 1 : 4; for (let m = 0; m < ns2; m++) {
+            const y2 = mid + (m - (ns2 - 1) / 2) * 50;
+            const w = 0.5 + 2.5 * Math.abs(Math.sin(i * 3 + k * 1.7 + m * 2.3 + p * 2.5));   // weights change as it learns
+            g.strokeStyle = `rgba(150,170,200,${0.15 + w * 0.12})`; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.lineTo(xs[i + 1], y2); g.stroke(); } }
+        }
+        text(names[i], x, 70, 14, '#bbb', 'center');
+      });
+      xs.forEach((x, i) => {
+        const ns = i === 4 ? 1 : 4;
+        for (let k = 0; k < ns; k++) {
+          const y = mid + (k - (ns - 1) / 2) * 50;
+          let col = '#2d3a55';
+          if (cycle < 0.4 && Math.abs(cycle / 0.4 * 4 - i) < 0.7) col = COL.fwd;
+          if (cycle > 0.55 && Math.abs((1 - (cycle - 0.55) / 0.45) * 4 - i) < 0.7) col = COL.grad;
+          g.fillStyle = col; g.beginPath(); g.arc(x, y, 13, 0, 7); g.fill();
+        }
+      });
+      g.fillStyle = cycle > 0.4 && cycle < 0.6 ? COL.grad : '#3a2d3d'; g.fillRect(830, 160, 90, 60); text('LOSS', 875, 197, 18, '#fff', 'center');
+      g.strokeStyle = '#778'; g.beginPath(); g.moveTo(745, mid); g.lineTo(828, mid); g.stroke();
+      const phase = cycle < 0.4 ? ['1. Forward pass: windows in, step probabilities out', COL.fwd] : cycle < 0.6 ? ['Compare to your taps: loss', COL.grad] : ['2. Backward pass: gradient of the loss for every weight (chain rule)', COL.grad];
+      text(phase[0], 40, 300, 18, phase[1]);
+      text(cycle > 0.9 ? '3. Optimizer step: w ← w − lr × gradient' : '3. Optimizer step: w ← w − lr × gradient', 40, 328, 16, cycle > 0.9 || cycle < 0.05 ? '#fff' : '#667');
+      // loss curve
+      box(40, 355, 880, 140);
+      text('loss over training', 50, 372, 12, '#889');
+      g.strokeStyle = COL.net; g.lineWidth = 3; g.beginPath();
+      const upto = ease(p) * (LOSS.length - 1);
+      const lo = Math.min(...LOSS), hi = Math.max(...LOSS);
+      for (let i = 0; i <= upto; i += 0.25) {
+        const y = 485 - (lossAt(i / (LOSS.length - 1)) - lo) / (hi - lo) * 105;
+        i ? g.lineTo(50 + i * (860 / (LOSS.length - 1)), y) : g.moveTo(50, y);
+      }
+      text('epoch 1', 50, 508, 11, '#889'); text('epoch 40', 910, 508, 11, '#889', 'right');
+      text(`loss ${lossAt(ease(p)).toFixed(2)}`, 910, 372, 12, COL.net, 'right');
+      g.stroke();
+    } },
+];
+
+let sceneIdx = 0, tScene = 0, playing = true, last = performance.now();
+const bar = document.getElementById('bar');
+scenes.forEach((s, i) => { const b = document.createElement('button'); b.textContent = s.name; b.onclick = () => { sceneIdx = i; tScene = 0; }; bar.appendChild(b); });
+const pb = document.createElement('button'); pb.textContent = 'Pause'; pb.onclick = () => { playing = !playing; pb.textContent = playing ? 'Pause' : 'Play'; }; bar.appendChild(pb);
+
+function frame(now) {
+  const dt = (now - last) / 1000; last = now;
+  if (playing) { tScene += dt; if (tScene >= SEC) { tScene = 0; sceneIdx = (sceneIdx + 1) % scenes.length; } }
+  g.fillStyle = COL.bg; g.fillRect(0, 0, W, H);
+  const s = scenes[sceneIdx];
+  s.draw(tScene / SEC, tScene + sceneIdx * 3);
+  document.getElementById('cap').textContent = s.cap;
+  [...bar.children].forEach((b, i) => { if (i < scenes.length) b.classList.toggle('on', i === sceneIdx); });
+  g.fillStyle = '#2a8f5a'; g.fillRect(0, H - 4, W * tScene / SEC, 4);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

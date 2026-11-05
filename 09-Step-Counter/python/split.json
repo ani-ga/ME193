@@ -1,0 +1,8 @@
+{
+ "data": "data/steps",
+ "test": [
+  "trial_20261105_010814_step.csv",
+  "trial_20261105_011024_step.csv",
+  "trial_20261105_011242_not_step.csv"
+ ]
+}

@@ -1,0 +1,57 @@
+{
+ "metrics": [
+  {
+   "method": "neural net",
+   "trials": 3,
+   "mean_error_steps": 2.3333333333333335,
+   "mean_abs_error_steps": 2.3333333333333335,
+   "error_sd_steps": 2.5166114784235836,
+   "interval95_steps": [
+    -2.59922516437689,
+    7.265891831043557
+   ],
+   "mean_abs_pct_error": 9.523809523809524,
+   "mean_pct_error": 9.523809523809524,
+   "pct_error_sd": 6.734350297014739,
+   "false_steps_when_truth_is_0": 0
+  },
+  {
+   "method": "baseline (no net)",
+   "trials": 3,
+   "mean_error_steps": 3.3333333333333335,
+   "mean_abs_error_steps": 3.3333333333333335,
+   "error_sd_steps": 1.1547005383792515,
+   "interval95_steps": [
+    1.0701202781100005,
+    5.596546388556666
+   ],
+   "mean_abs_pct_error": 10.476190476190476,
+   "mean_pct_error": 10.476190476190476,
+   "pct_error_sd": 1.346870059402948,
+   "false_steps_when_truth_is_0": 2
+  }
+ ],
+ "trials": [
+  {
+   "trial": "trial_20261105_010814_step.csv",
+   "label": "step",
+   "true": 35,
+   "net": 40,
+   "baseline": 39
+  },
+  {
+   "trial": "trial_20261105_011024_step.csv",
+   "label": "step",
+   "true": 42,
+   "net": 44,
+   "baseline": 46
+  },
+  {
+   "trial": "trial_20261105_011242_not_step.csv",
+   "label": "not_step",
+   "true": 0,
+   "net": 0,
+   "baseline": 2
+  }
+ ]
+}

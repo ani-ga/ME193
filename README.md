@@ -12,6 +12,7 @@ My work for ME193, one folder per assignment, roughly in the order we did them.
 | 06 | [Ping-Pong](06-Ping-Pong/) | Virtual ping-pong with the Double Motor as the paddle: MediaPipe Pose, IMU swing detection, AprilTag menus, haptic feedback, and the record streak published over MQTT. |
 | 07 | [Sumo Wrestler](07-Sumo/) | LEGO sumo robot with shared control: Xbox controller driving plus a UnoQ-read Color Sensor that forces the robot off the ring's edge, combined in a decision tree. |
 | 08 | [Gait Identifier](08-Gait-Identifier/) | Arduino UnoQ + MPU6050 on the ankle classifies standing / walking / running / biking / hopping with a threshold model and a hand-written KNN, served as a phone web page with an animated stick-figure bunny and live motion graphs. |
+| 09 | [Step Counter](09-Step-Counter/) | Extends 08 into a step counter: a PyTorch 1D conv net finds each foot strike from all 6 IMU channels, with an uncertainty analysis against a no-net baseline. |
 
 ## Setup
 
