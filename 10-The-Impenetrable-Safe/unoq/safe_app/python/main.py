@@ -24,13 +24,46 @@ AUTO_ARM = False   # True = re-arm automatically (use if the button isn't wired 
 net = NumpyFingerNet(Path(__file__).resolve().parent / "fingernet.npz")
 
 
-def bridge(name):
+def bridge(name, *args):
     """Call a sketch function; log (don't crash) if the MCU doesn't answer."""
     try:
-        return Bridge.call(name)
+        return Bridge.call(name, *args)
     except Exception as e:
         logger.error(f"Bridge call {name} failed: {e}")
         return None
+
+
+# ---- LED matrix (8 rows x 13 columns): show the number of fingers the network sees ----
+FONT = {  # 5 wide x 7 tall, '#' = lit
+    1: ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    2: [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+    3: [".###.", "#...#", "....#", "..##.", "....#", "#...#", ".###."],
+    4: ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+    5: ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+}
+MATRIX_ROWS, MATRIX_COLS, MATRIX_BRIGHTNESS = 8, 13, 7
+matrix_state = {"shown": None, "candidate": None, "count": 0}
+
+
+def digit_frame(digit):
+    """One byte per pixel, row by row (what the sketch's draw() expects). digit 0 = blank."""
+    grid = [[0] * MATRIX_COLS for _ in range(MATRIX_ROWS)]
+    for r, row in enumerate(FONT.get(digit, [])):
+        for c, ch in enumerate(row):
+            if ch == "#":
+                grid[r][c + 4] = MATRIX_BRIGHTNESS      # 5 columns, centered in 13
+    return bytes(v for row in grid for v in row)
+
+
+def show_on_matrix(digit):
+    """Only redraw when the answer has been the same for 2 frames and differs from what is showing."""
+    if digit == matrix_state["candidate"]:
+        matrix_state["count"] += 1
+    else:
+        matrix_state["candidate"], matrix_state["count"] = digit, 1
+    if matrix_state["count"] >= 2 and digit != matrix_state["shown"]:
+        bridge("draw", digit_frame(digit))
+        matrix_state["shown"] = digit
 
 
 # What the web page shows (written by loop(), read by the web handlers below).
@@ -121,6 +154,7 @@ def loop():
     stats["infer_ms"] += (time.perf_counter() - t) * 1000
     stats["frames"] += 1
     view["pred"], view["conf"] = digit, conf
+    show_on_matrix(digit if (conf >= config.CONF_THRESHOLD and 1 <= digit <= 5) else 0)
     failed_before = policy.failed
     policy.update(digit, conf)
     if policy.failed > failed_before:
