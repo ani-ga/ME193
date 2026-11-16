@@ -1,0 +1,42 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>The Impenetrable Safe</title>
+<style>
+body{font-family:system-ui;margin:16px;max-width:760px}
+#big{font-size:clamp(36px,10vw,64px);font-weight:700;padding:18px;margin:10px 0;border-radius:12px;background:#ddd;text-align:center}
+.open{background:#2ecc71!important;color:#fff}.bad{background:#e74c3c!important;color:#fff}.listen{background:#f1c40f!important}
+img{width:100%;max-width:640px;border:1px solid #999}button{font-size:18px;padding:10px 18px}
+input{font-size:18px;width:5em}
+</style>
+<h2>The Impenetrable Safe</h2>
+<p>Code (3 different digits, 1-5): <input id=code value=253>
+<button onclick=setCode()>Set code</button> <button onclick=start()>Button: start / lock in digit</button></p>
+<div id=big>LOCKED</div>
+<p id=msg></p>
+<p>Seeing: <b id=pred>-</b> (confidence <span id=conf>-</span>) &nbsp; Digits so far: <b id=digits></b></p>
+<p>Running on the UNO Q: <span id=perf>-</span></p>
+<img id=cam alt="camera">
+<script>
+const $=id=>document.getElementById(id);
+async function setCode(){const r=await fetch('/set_code?code='+encodeURIComponent($('code').value),{method:'POST'});
+ const j=await r.json(); if(j.error)alert(j.error)}
+async function start(){await fetch('/start',{method:'POST'})}
+// Load each new frame off-screen first and swap it in only when ready, so the picture never flashes blank.
+let loading=false;
+function nextFrame(){
+ if(loading)return; loading=true;
+ const im=new Image();
+ im.onload=()=>{$('cam').src=im.src;loading=false};
+ im.onerror=()=>{loading=false};
+ im.src='/frame.jpg?'+Date.now();
+}
+setInterval(nextFrame,150);
+setInterval(async()=>{try{const s=await (await fetch('/state')).json();
+ $('pred').textContent=s.pred;$('conf').textContent=(s.conf||0).toFixed(2);$('msg').textContent=s.msg;
+ $('perf').textContent=s.fps.toFixed(1)+' fps, '+s.infer_ms.toFixed(0)+' ms per frame';
+ const d=(s.policy=='IDLE')?[]:s.digits; $('digits').textContent=d.join(' ')+' '+'_ '.repeat(Math.max(0,s.code_len-d.length));
+ const b=$('big');b.className='';
+ if(s.policy=='UNLOCKED'){b.textContent='UNLOCKED';b.className='open'}
+ else if(s.policy=='LOCKOUT'){b.textContent='LOCKED OUT';b.className='bad'}
+ else if(s.policy=='ARMED'){b.textContent='LISTENING...';b.className='listen'}
+ else b.textContent='LOCKED'}catch(e){}},300);
+</script>
